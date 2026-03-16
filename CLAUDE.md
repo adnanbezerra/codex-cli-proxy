@@ -77,6 +77,10 @@ src/
     tool-translator.ts      # Anthropic tool defs -> MCP server config
     mcp-bridge.ts           # Standalone MCP stdio server (child process)
 
+  openclaw/                 # OpenClaw integration
+    tool-map.ts             # Tool name mapping (exec→Bash, read→Read, etc.) + reverse map
+    prompt-filter.ts        # Strip injected tooling sections from system prompts
+
   translation/              # Format conversion (the core logic)
     model-map.ts            # Model alias resolution, effort validation, model listing
     anthropic-to-cli.ts     # AnthropicMessagesRequest -> CliArgs (prompt + flags)
@@ -120,8 +124,12 @@ src/
 ### "I need to change tool use behavior"
 - `src/tools/tool-translator.ts` — converts Anthropic tool definitions to MCP config
 - `src/tools/mcp-bridge.ts` — standalone MCP stdio server the CLI connects to
+- `src/openclaw/tool-map.ts` — maps client tool names (e.g. OpenClaw's `exec`) to Claude Code equivalents (`Bash`), with reverse mapping for responses
 - Tool integration in request translation: `src/translation/anthropic-to-cli.ts` (builds MCP config when `tools[]` present)
 - The bridge returns placeholder results; the proxy surfaces `tool_use` blocks from the CLI output as `stop_reason: "tool_use"` to the client.
+
+### "I need to change system prompt filtering"
+- `src/openclaw/prompt-filter.ts` — auto-detects and strips injected tooling sections (XML-tagged tool/skill blocks) from system prompts
 
 ### "I need to change configuration"
 - `src/config.ts` — `Config` interface and `loadConfig()`. All settings come from env vars.
@@ -159,6 +167,8 @@ Any of these are accepted in the `model` field:
 | `claude-opus-4-6`, `claude-opus-4`, `opus`, `opus-4`, `opus-4-6` | `opus` | `claude-opus-4-6` |
 | `claude-sonnet-4-6`, `claude-sonnet-4`, `sonnet`, `sonnet-4`, `sonnet-4-6` | `sonnet` | `claude-sonnet-4-6` |
 | `claude-haiku-4-5`, `claude-haiku-4`, `haiku`, `haiku-4`, `haiku-4-5` | `haiku` | `claude-haiku-4-5` |
+
+Model names with the `claude-code-cli/` or `openai/` prefix are also accepted (the prefix is stripped before lookup). Unknown models fall back to `DEFAULT_MODEL`.
 
 ## Effort Levels
 
@@ -223,6 +233,38 @@ These are accepted but ignored (a `x-proxy-unsupported` response header lists th
 - `stop_sequences` / `stop` — no CLI equivalent
 - `frequency_penalty`, `presence_penalty` — OpenAI-specific, no equivalent
 - `n > 1` — only single completion supported
+
+## OpenClaw Integration
+
+The proxy supports plug-and-play operation with [OpenClaw](https://github.com/AntonioAEMartins/claude-code-proxy/issues/3). The following features are applied automatically on OpenAI-format requests:
+
+### Tool Name Mapping
+Client tool names are mapped to Claude Code equivalents for better model performance:
+
+| Client Tool | Claude Code Equivalent |
+|---|---|
+| `exec` | `Bash` |
+| `read` | `Read` |
+| `write` | `Write` |
+| `edit` | `Edit` |
+| `web_search` | `WebSearch` |
+| `web_fetch` | `WebFetch` |
+| `browser` | `Browser` |
+| `process` | `Bash` |
+| `canvas` | `Canvas` |
+
+Tool names are mapped forward in requests and reverse-mapped in responses so clients see their original names.
+
+### System Prompt Filtering
+XML-tagged tooling sections injected by coding agents (e.g. `<tools>`, `<skills>`, `<functions>`) are auto-detected and stripped from system prompts to prevent conflicts with the CLI's MCP-based tool system.
+
+### Content Block Handling
+`input_text` content blocks (used by OpenAI Responses API and some clients) are treated as plain `text` blocks. Multi-block assistant content is separated with newlines.
+
+### Streaming Improvements
+- SSE connection confirmation (`:ok` comment sent on connect)
+- Structured error propagation during streaming (errors sent as SSE events)
+- Client disconnect detection kills the subprocess immediately
 
 ## Security Notes
 

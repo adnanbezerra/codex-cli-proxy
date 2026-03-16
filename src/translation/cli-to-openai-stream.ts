@@ -21,9 +21,11 @@ function makeChunk(
 
 /**
  * Transform CLI events into OpenAI SSE text chunks.
+ * @param reverseToolMap - Optional map to translate CLI tool names back to client names
  */
 export async function* cliToOpenAISSE(
   events: AsyncGenerator<CliEvent>,
+  reverseToolMap?: Record<string, string>,
 ): AsyncGenerator<string> {
   let messageId = '';
   let model = '';
@@ -66,7 +68,7 @@ export async function* cliToOpenAISSE(
               index: toolCallIndex,
               id: block.id,
               type: 'function',
-              function: { name: stripMcpToolPrefix(block.name), arguments: '' },
+              function: { name: stripMcpToolPrefix(block.name, reverseToolMap), arguments: '' },
             }],
           }, null);
           yield `data: ${JSON.stringify(chunk)}\n\n`;

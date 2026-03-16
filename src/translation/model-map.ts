@@ -1,4 +1,5 @@
 import { badRequest } from '../util/errors.js';
+import { logger } from '../util/logger.js';
 
 const MODEL_ALIASES: Record<string, string> = {
   // Opus aliases
@@ -21,6 +22,12 @@ const MODEL_ALIASES: Record<string, string> = {
   'haiku-4-5': 'haiku',
 };
 
+/**
+ * Prefixes that are stripped before model alias lookup.
+ * Allows clients like OpenClaw to send e.g. "claude-code-cli/opus".
+ */
+const STRIP_PREFIXES = ['claude-code-cli/', 'openai/'];
+
 // Map CLI model names back to full Anthropic model IDs for responses
 const CLI_TO_API_MODEL: Record<string, string> = {
   'opus': 'claude-opus-4-6',
@@ -35,12 +42,32 @@ const EFFORT_BY_MODEL: Record<string, string[]> = {
   haiku: [], // No effort support
 };
 
-export function toCliModel(model: string): string {
-  const normalized = MODEL_ALIASES[model];
-  if (!normalized) {
-    throw badRequest(`Unknown model: ${model}. Supported models: ${Object.keys(MODEL_ALIASES).join(', ')}`);
+/**
+ * Strip known prefixes from model names.
+ * E.g. "claude-code-cli/opus" → "opus", "openai/gpt-4.1" → "gpt-4.1"
+ */
+function stripModelPrefix(model: string): string {
+  for (const prefix of STRIP_PREFIXES) {
+    if (model.startsWith(prefix)) {
+      return model.slice(prefix.length);
+    }
   }
-  return normalized;
+  return model;
+}
+
+export function toCliModel(model: string, defaultCliModel?: string): string {
+  const stripped = stripModelPrefix(model);
+  const normalized = MODEL_ALIASES[stripped];
+  if (normalized) return normalized;
+
+  // Unknown model — fall back to default if provided
+  if (defaultCliModel) {
+    const fallback = MODEL_ALIASES[defaultCliModel] || defaultCliModel;
+    logger.warn(`Unknown model "${model}", falling back to "${fallback}"`);
+    return fallback;
+  }
+
+  throw badRequest(`Unknown model: ${model}. Supported models: ${Object.keys(MODEL_ALIASES).join(', ')}`);
 }
 
 export function toApiModel(cliModel: string): string {
@@ -48,7 +75,8 @@ export function toApiModel(cliModel: string): string {
 }
 
 export function validateEffort(model: string, effort: string | undefined, defaultEffort: string): string | null {
-  const cliModel = MODEL_ALIASES[model] || model;
+  const stripped = stripModelPrefix(model);
+  const cliModel = MODEL_ALIASES[stripped] || stripped;
   const allowed = EFFORT_BY_MODEL[cliModel];
 
   if (!allowed || allowed.length === 0) {
