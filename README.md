@@ -224,6 +224,12 @@ Your App  →  HTTP Request  →  Proxy  →  claude --print  →  Claude Max
 - Subprocess environment is filtered — your secrets are not leaked to the CLI
 - Subprocesses are killed on client disconnect and request timeout
 
+## Contributing
+
+Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
+
+The short version: open an issue to discuss, then fork, branch, and submit a PR. See the contributing guide for branch naming, commit conventions, code guidelines, and testing steps.
+
 ## License
 
 [MIT](LICENSE) — use it however you want, just keep the copyright notice.

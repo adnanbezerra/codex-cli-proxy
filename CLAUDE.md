@@ -233,6 +233,20 @@ These are accepted but ignored (a `x-proxy-unsupported` response header lists th
 - Subprocess timeout with SIGTERM -> SIGKILL escalation
 - Client disconnect kills the subprocess immediately
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide. Key points for agents:
+
+- All changes go through **Issues + Pull Requests** — no direct pushes to `main`
+- Branch naming: `feat/`, `fix/`, `docs/`, `refactor/`, `chore/`
+- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) — e.g., `feat: add vision support`
+- `npm run build` must compile with zero errors before submitting
+- Update `CLAUDE.md` when adding files, routes, or config options
+- Update `README.md` when changing user-facing behavior
+- No `any` types without a justifying comment
+- No runtime dependencies unless absolutely necessary
+- Always `spawn()`, never `exec()`
+
 ## Build & Development
 
 ```bash
