@@ -10,6 +10,7 @@ import { stripMcpToolPrefix } from '../tools/tool-translator.js';
 export async function collectAnthropicResponse(
   events: AsyncGenerator<CliEvent>,
   enableThinking: boolean,
+  reverseToolMap?: Record<string, string>,
 ): Promise<AnthropicMessagesResponse> {
   let messageId = '';
   let model = '';
@@ -46,7 +47,7 @@ export async function collectAnthropicResponse(
             contentBlocks[inner.index] = {
               type: 'tool_use',
               id: block.id,
-              name: stripMcpToolPrefix(block.name),
+              name: stripMcpToolPrefix(block.name, reverseToolMap),
               input: {},
             };
           } else if (block.type === 'thinking' && enableThinking) {

@@ -6,7 +6,7 @@ Use your **Claude Max subscription** as an API. This proxy wraps the Claude CLI 
 - **Anthropic Messages API** — `POST /v1/messages`
 - **OpenAI Chat Completions API** — `POST /v1/chat/completions`
 
-Works with the Anthropic SDK, OpenAI SDK, Python clients, Cursor, Continue, aider, LiteLLM, and anything else that accepts a custom base URL.
+Works with the Anthropic SDK, OpenAI SDK, Python clients, Cursor, Continue, aider, LiteLLM, OpenClaw, and anything else that accepts a custom base URL.
 
 ## Why?
 
@@ -113,8 +113,9 @@ Any tool with a "custom base URL" or "OpenAI-compatible" setting works:
 | **Continue** | `http://localhost:4523/v1` |
 | **aider** | `--openai-api-base http://localhost:4523/v1` |
 | **LiteLLM** | `api_base="http://localhost:4523/v1"` |
+| **OpenClaw** | `OPENAI_BASE_URL=http://host.docker.internal:4523/v1` |
 
-Use `claude-sonnet-4`, `claude-opus-4`, or `claude-haiku-4` as the model name.
+Use `claude-sonnet-4-6`, `claude-opus-4-6`, or `claude-haiku-4-5` as the model name (shorter aliases like `sonnet`, `opus`, `haiku` also work). Model names with a `claude-code-cli/` or `openai/` prefix are also accepted (the prefix is stripped automatically). Unknown models fall back to the `DEFAULT_MODEL`.
 
 ## Streaming
 
@@ -165,6 +166,7 @@ for await (const chunk of stream) {
 - **Effort levels** — `low`, `medium`, `high`, `max` (model-dependent)
 - **Rate limit propagation** from CLI quota
 - **Auto-cleanup** — subprocess killed on client disconnect or timeout
+- **OpenClaw integration** — automatic tool name mapping, system prompt filtering, and `input_text` block support
 
 ## Configuration
 

@@ -26,7 +26,13 @@ export interface OpenAIImageContent {
   image_url: OpenAIImageUrl;
 }
 
-export type OpenAIContentPart = OpenAITextContent | OpenAIImageContent;
+/** OpenClaw/OpenAI Responses API `input_text` content block — treated as plain text. */
+export interface OpenAIInputTextContent {
+  type: 'input_text';
+  text: string;
+}
+
+export type OpenAIContentPart = OpenAITextContent | OpenAIImageContent | OpenAIInputTextContent;
 
 export interface OpenAIToolCall {
   id: string;

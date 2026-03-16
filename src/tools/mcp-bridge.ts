@@ -1,5 +1,6 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
 interface ToolDefinition {
   name: string;
@@ -14,6 +15,10 @@ interface ToolDefinition {
  * The CLI connects to this server to discover and call tools.
  *
  * Tool definitions are passed via the TOOL_DEFINITIONS environment variable.
+ *
+ * Uses the low-level Server API so that JSON Schema input_schema objects are
+ * passed through directly, instead of being converted via Zod (which would
+ * strip the properties and produce empty schemas).
  *
  * When a tool is called by the Claude CLI, this bridge returns a placeholder
  * result. The proxy process detects the tool_use block in the CLI's output
@@ -36,41 +41,39 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const server = new McpServer({
-    name: 'client_tools',
-    version: '1.0.0',
-  });
-
-  // Register each tool definition
+  const toolMap = new Map<string, ToolDefinition>();
   for (const tool of toolDefs) {
-    // The McpServer.tool() method signature: (name, description, schema, handler)
-    // We need to use the raw registration approach for dynamic schemas
-    server.tool(
-      tool.name,
-      tool.description || '',
-      tool.input_schema as any,
-      async (args: Record<string, unknown>) => {
-        // Return a placeholder result.
-        // The proxy will intercept the tool_use block from the CLI's output
-        // and return it to the client before this result is used.
-        // When the client sends a follow-up request with tool_result,
-        // the proxy will embed it in the prompt of a new CLI invocation.
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({
-                status: 'pending',
-                message: 'Tool execution delegated to client. Result will be provided in follow-up request.',
-                tool_name: tool.name,
-                arguments: args,
-              }),
-            },
-          ],
-        };
-      },
-    );
+    toolMap.set(tool.name, tool);
   }
+
+  const server = new Server(
+    { name: 'client_tools', version: '1.0.0' },
+    { capabilities: { tools: {} } },
+  );
+
+  // Return tool definitions with raw JSON Schema (no Zod conversion)
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: toolDefs.map((tool) => ({
+      name: tool.name,
+      description: tool.description || '',
+      inputSchema: tool.input_schema,
+    })),
+  }));
+
+  // Handle tool calls with a placeholder result
+  server.setRequestHandler(CallToolRequestSchema, async (request) => ({
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify({
+          status: 'pending',
+          message: 'Tool execution delegated to client. Result will be provided in follow-up request.',
+          tool_name: request.params.name,
+          arguments: request.params.arguments,
+        }),
+      },
+    ],
+  }));
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

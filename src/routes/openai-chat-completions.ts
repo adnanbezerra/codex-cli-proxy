@@ -8,6 +8,8 @@ import { buildArgs } from '../cli/args-builder.js';
 import { spawnCli } from '../cli/subprocess.js';
 import { cliToOpenAISSE } from '../translation/cli-to-openai-stream.js';
 import { collectOpenAIResponse } from '../translation/cli-to-openai.js';
+import { mapToolDefinitions } from '../openclaw/tool-map.js';
+import { stripToolingSections, hasToolingSections } from '../openclaw/prompt-filter.js';
 import { badRequest } from '../util/errors.js';
 import { logger } from '../util/logger.js';
 
@@ -24,14 +26,19 @@ function convertMessages(messages: OpenAIChatMessage[]): {
 
   for (const msg of messages) {
     if (msg.role === 'system') {
-      // Collect system messages
+      // Collect system messages — handle both 'text' and 'input_text' content parts
       const text = typeof msg.content === 'string' ? msg.content :
-        Array.isArray(msg.content) ? msg.content.filter(p => p.type === 'text').map(p => ('text' in p ? p.text : '')).join('\n') : '';
+        Array.isArray(msg.content) ? msg.content
+          .filter(p => p.type === 'text' || p.type === 'input_text')
+          .map(p => ('text' in p ? p.text : ''))
+          .join('\n') : '';
       system = system ? `${system}\n\n${text}` : text;
     } else if (msg.role === 'user') {
       const content = typeof msg.content === 'string' ? msg.content :
         Array.isArray(msg.content) ? msg.content.map(part => {
-          if (part.type === 'text') return { type: 'text' as const, text: part.text };
+          if (part.type === 'text' || part.type === 'input_text') {
+            return { type: 'text' as const, text: part.text };
+          }
           return { type: 'text' as const, text: '[Unsupported content type]' };
         }) : '';
       anthropicMessages.push({ role: 'user', content });
@@ -42,7 +49,10 @@ function convertMessages(messages: OpenAIChatMessage[]): {
         if (typeof msg.content === 'string') {
           text = msg.content;
         } else if (Array.isArray(msg.content)) {
-          text = msg.content.filter(p => p.type === 'text').map(p => 'text' in p ? p.text : '').join('');
+          text = msg.content
+            .filter(p => p.type === 'text' || p.type === 'input_text')
+            .map(p => 'text' in p ? p.text : '')
+            .join('\n\n');
         }
         if (text) blocks.push({ type: 'text', text });
       }
@@ -134,8 +144,26 @@ export async function handleChatCompletions(
 
   // Convert OpenAI format to Anthropic format
   const { system, anthropicMessages } = convertMessages(body.messages);
-  const tools = convertTools(body.tools);
+  let tools = convertTools(body.tools);
   const toolChoice = convertToolChoice(body.tool_choice);
+
+  // Map tool names (e.g. OpenClaw "exec" → "Bash") and build reverse map for responses
+  let reverseToolMap: Record<string, string> | undefined;
+  if (tools && tools.length > 0) {
+    const { mappedTools, reverseToolMap: rmap } = mapToolDefinitions(tools);
+    tools = mappedTools;
+    if (Object.keys(rmap).length > 0) {
+      reverseToolMap = rmap;
+      logger.debug('Tool name mapping applied', { reverseToolMap });
+    }
+  }
+
+  // Strip injected tooling sections from system prompt (e.g. OpenClaw tool defs)
+  let filteredSystem = system;
+  if (system && hasToolingSections(system)) {
+    filteredSystem = stripToolingSections(system);
+    logger.debug('Stripped tooling sections from system prompt');
+  }
 
   // Get effort from custom header
   const effortHeader = req.headers['x-effort'];
@@ -146,7 +174,7 @@ export async function handleChatCompletions(
     model: body.model,
     messages: anthropicMessages,
     max_tokens: body.max_tokens ?? body.max_completion_tokens ?? 4096,
-    system,
+    system: filteredSystem,
     tools,
     tool_choice: toolChoice,
     metadata: { effort },
@@ -182,9 +210,11 @@ export async function handleChatCompletions(
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
     });
+    // SSE connection confirmation — lets clients know the stream is live
+    res.write(':ok\n\n');
 
     try {
-      for await (const chunk of cliToOpenAISSE(events)) {
+      for await (const chunk of cliToOpenAISSE(events, reverseToolMap)) {
         if (!res.writable) break;
         res.write(chunk);
       }
@@ -192,13 +222,25 @@ export async function handleChatCompletions(
       logger.error('Error during OpenAI streaming', {
         error: err instanceof Error ? err.message : String(err),
       });
+      // Propagate error as SSE event if stream is still writable
+      if (res.writable) {
+        const errorPayload = {
+          error: {
+            message: err instanceof Error ? err.message : String(err),
+            type: 'server_error',
+            code: null,
+          },
+        };
+        res.write(`data: ${JSON.stringify(errorPayload)}\n\n`);
+        res.write('data: [DONE]\n\n');
+      }
     } finally {
       kill();
       res.end();
     }
   } else {
     try {
-      const result = await collectOpenAIResponse(events);
+      const result = await collectOpenAIResponse(events, reverseToolMap);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(result));
     } catch (err) {

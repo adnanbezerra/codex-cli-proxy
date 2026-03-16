@@ -24,7 +24,7 @@ export interface BuiltCliCommand {
 }
 
 export function buildArgs(cliArgs: CliArgs, config: Config): BuiltCliCommand {
-  const cliModel = toCliModel(cliArgs.model);
+  const cliModel = toCliModel(cliArgs.model, config.defaultModel);
 
   const args: string[] = [
     config.claudePath,
@@ -38,7 +38,7 @@ export function buildArgs(cliArgs: CliArgs, config: Config): BuiltCliCommand {
   ];
 
   // Effort level (validate and omit for haiku)
-  const effort = validateEffort(cliArgs.model, cliArgs.effort, config.defaultEffort);
+  const effort = validateEffort(cliModel, cliArgs.effort, config.defaultEffort);
   if (effort !== null) {
     args.push('--effort', effort);
   }

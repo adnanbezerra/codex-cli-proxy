@@ -12,9 +12,11 @@ interface AccumulatedToolCall {
 
 /**
  * Collect all CLI events and build a non-streaming OpenAI Chat Completion response.
+ * @param reverseToolMap - Optional map to translate CLI tool names back to client names
  */
 export async function collectOpenAIResponse(
   events: AsyncGenerator<CliEvent>,
+  reverseToolMap?: Record<string, string>,
 ): Promise<OpenAIChatCompletionResponse> {
   let messageId = '';
   let model = '';
@@ -41,7 +43,7 @@ export async function collectOpenAIResponse(
             currentToolCallIndex++;
             toolCalls.push({
               id: inner.content_block.id,
-              name: stripMcpToolPrefix(inner.content_block.name),
+              name: stripMcpToolPrefix(inner.content_block.name, reverseToolMap),
               partialJson: '',
             });
           }

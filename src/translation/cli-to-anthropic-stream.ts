@@ -14,6 +14,7 @@ function formatSSE(event: StreamInnerEvent): string {
 export async function* cliToAnthropicSSE(
   events: AsyncGenerator<CliEvent>,
   enableThinking: boolean,
+  reverseToolMap?: Record<string, string>,
 ): AsyncGenerator<string> {
   const filteredIndices = new Set<number>();
   let sawToolUseStop = false;
@@ -28,7 +29,7 @@ export async function* cliToAnthropicSSE(
           inner.type === 'content_block_start' &&
           inner.content_block.type === 'tool_use'
         ) {
-          inner.content_block.name = stripMcpToolPrefix(inner.content_block.name);
+          inner.content_block.name = stripMcpToolPrefix(inner.content_block.name, reverseToolMap);
         }
 
         // Track tool_use stop reason for multi-turn interception
