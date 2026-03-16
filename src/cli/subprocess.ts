@@ -27,6 +27,7 @@ export function spawnCli(args: string[], prompt: string, timeoutMs: number): Sub
       TMPDIR: process.env.TMPDIR,
       XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
       XDG_DATA_HOME: process.env.XDG_DATA_HOME,
+      CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR,
     },
   });
 
