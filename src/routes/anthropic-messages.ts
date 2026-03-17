@@ -32,6 +32,10 @@ export async function handleMessages(
   if (body.top_p !== undefined) unsupported.push('top_p');
   if (body.top_k !== undefined) unsupported.push('top_k');
   if (body.stop_sequences !== undefined) unsupported.push('stop_sequences');
+  if (body.tools !== undefined) unsupported.push('tools');
+  if (body.tool_choice !== undefined) unsupported.push('tool_choice');
+  if (body.metadata?.json_schema !== undefined) unsupported.push('metadata.json_schema');
+  if (body.metadata?.effort !== undefined) unsupported.push('metadata.effort');
 
   if (unsupported.length > 0) {
     addUnsupportedWarnings(res, unsupported);
@@ -47,7 +51,7 @@ export async function handleMessages(
   const cliArgs = translateAnthropicRequest(body);
   cliArgs.enableThinking = enableThinking;
 
-  const { args, prompt } = buildArgs(cliArgs, config);
+  const { args, prompt, outputFile } = buildArgs(cliArgs, config);
 
   logger.debug('Spawning CLI for Anthropic request', {
     model: body.model,
@@ -55,7 +59,7 @@ export async function handleMessages(
     messageCount: body.messages.length,
   });
 
-  const { events, kill } = spawnCli(args, prompt, config.requestTimeoutMs);
+  const { events, kill } = spawnCli(args, prompt, config.requestTimeoutMs, outputFile);
 
   // Kill subprocess on client disconnect
   req.on('close', () => {

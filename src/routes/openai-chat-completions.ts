@@ -137,6 +137,9 @@ export async function handleChatCompletions(
   if (body.presence_penalty !== undefined) unsupported.push('presence_penalty');
   if (body.n !== undefined && body.n > 1) unsupported.push('n');
   if (body.stop !== undefined) unsupported.push('stop');
+  if (body.tools !== undefined) unsupported.push('tools');
+  if (body.tool_choice !== undefined) unsupported.push('tool_choice');
+  if (body.response_format !== undefined) unsupported.push('response_format');
 
   if (unsupported.length > 0) {
     addUnsupportedWarnings(res, unsupported);
@@ -166,9 +169,6 @@ export async function handleChatCompletions(
   }
 
   // Get effort from custom header
-  const effortHeader = req.headers['x-effort'];
-  const effort = typeof effortHeader === 'string' ? effortHeader : undefined;
-
   // Build Anthropic-format request for the translation pipeline
   const anthropicRequest: AnthropicMessagesRequest = {
     model: body.model,
@@ -177,19 +177,11 @@ export async function handleChatCompletions(
     system: filteredSystem,
     tools,
     tool_choice: toolChoice,
-    metadata: { effort },
+    metadata: undefined,
   };
 
-  // Handle response_format for structured output
-  if (body.response_format?.type === 'json_schema' && body.response_format.json_schema) {
-    anthropicRequest.metadata = {
-      ...anthropicRequest.metadata,
-      json_schema: body.response_format.json_schema.schema,
-    };
-  }
-
   const cliArgs = translateAnthropicRequest(anthropicRequest);
-  const { args, prompt } = buildArgs(cliArgs, config);
+  const { args, prompt, outputFile } = buildArgs(cliArgs, config);
 
   logger.debug('Spawning CLI for OpenAI request', {
     model: body.model,
@@ -197,7 +189,7 @@ export async function handleChatCompletions(
     messageCount: body.messages.length,
   });
 
-  const { events, kill } = spawnCli(args, prompt, config.requestTimeoutMs);
+  const { events, kill } = spawnCli(args, prompt, config.requestTimeoutMs, outputFile);
 
   req.on('close', () => {
     logger.debug('Client disconnected, killing CLI process');

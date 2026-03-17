@@ -1,10 +1,11 @@
 {
-  "name": "claude-code-proxy",
+  "name": "codex-cli-proxy",
   "version": "1.0.0",
-  "description": "Production-grade API proxy for Claude CLI — supports Anthropic Messages API and OpenAI Chat Completions",
+  "description": "Production-grade API proxy for Codex CLI — supports Anthropic Messages API and OpenAI Chat Completions",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
+    "codex-proxy": "dist/index.js",
     "claude-proxy": "dist/index.js"
   },
   "scripts": {

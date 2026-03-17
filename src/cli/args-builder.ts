@@ -1,5 +1,8 @@
 import type { Config } from '../config.js';
-import { toCliModel, validateEffort } from '../translation/model-map.js';
+import { toCliModel } from '../translation/model-map.js';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 export interface CliArgs {
   /** The system prompt, if any */
@@ -21,51 +24,40 @@ export interface CliArgs {
 export interface BuiltCliCommand {
   args: string[];
   prompt: string;
+  outputFile: string;
 }
 
 export function buildArgs(cliArgs: CliArgs, config: Config): BuiltCliCommand {
   const cliModel = toCliModel(cliArgs.model, config.defaultModel);
+  const outputDir = mkdtempSync(join(tmpdir(), 'codex-proxy-'));
+  const outputFile = join(outputDir, 'last-message.txt');
 
   const args: string[] = [
-    config.claudePath,
-    '--print',
-    '--output-format', 'stream-json',
-    '--verbose',
-    '--include-partial-messages',
-    '--dangerously-skip-permissions',
-    '--no-session-persistence',
+    config.codexPath,
+    'exec',
+    '--json',
+    '--skip-git-repo-check',
+    '--full-auto',
+    '--ephemeral',
     '--model', cliModel,
+    '--output-last-message', outputFile,
+    '-',
   ];
 
-  // Effort level (validate and omit for haiku)
-  const effort = validateEffort(cliModel, cliArgs.effort, config.defaultEffort);
-  if (effort !== null) {
-    args.push('--effort', effort);
-  }
-
-  // System prompt
+  // Inject the system prompt into the user prompt because codex exec does not
+  // expose a dedicated system prompt flag.
   if (cliArgs.systemPrompt) {
-    args.push('--system-prompt', cliArgs.systemPrompt);
+    cliArgs.prompt = [
+      '<system>',
+      cliArgs.systemPrompt,
+      '</system>',
+      '',
+      cliArgs.prompt,
+    ].join('\n');
   }
 
-  // MCP config for tool use
-  if (cliArgs.mcpConfig) {
-    args.push('--strict-mcp-config');
-    args.push('--mcp-config', JSON.stringify(cliArgs.mcpConfig));
-  } else {
-    // No tools — isolate from host MCP servers
-    args.push('--strict-mcp-config');
-    args.push('--mcp-config', JSON.stringify({ mcpServers: {} }));
-  }
-
-  // Disable built-in tools (user-defined MCP tools still work)
-  args.push('--tools', '');
-
-  // JSON schema for structured output
-  if (cliArgs.jsonSchema) {
-    args.push('--json-schema', JSON.stringify(cliArgs.jsonSchema));
-  }
-
-  // Prompt goes via stdin, not as a positional arg
-  return { args, prompt: cliArgs.prompt };
+  // Client-defined tools, effort overrides, and JSON schema output are
+  // currently ignored. Codex still has access to its own native toolchain when
+  // running in full-auto mode.
+  return { args, prompt: cliArgs.prompt, outputFile };
 }

@@ -2,44 +2,33 @@ import { badRequest } from '../util/errors.js';
 import { logger } from '../util/logger.js';
 
 const MODEL_ALIASES: Record<string, string> = {
-  // Opus aliases
-  'claude-opus-4-6': 'opus',
-  'claude-opus-4': 'opus',
-  'opus': 'opus',
-  'opus-4': 'opus',
-  'opus-4-6': 'opus',
-  // Sonnet aliases
-  'claude-sonnet-4-6': 'sonnet',
-  'claude-sonnet-4': 'sonnet',
-  'sonnet': 'sonnet',
-  'sonnet-4': 'sonnet',
-  'sonnet-4-6': 'sonnet',
-  // Haiku aliases
-  'claude-haiku-4-5': 'haiku',
-  'claude-haiku-4': 'haiku',
-  'haiku': 'haiku',
-  'haiku-4': 'haiku',
-  'haiku-4-5': 'haiku',
+  'codex': 'gpt-5-codex',
+  'gpt-5-codex': 'gpt-5-codex',
+  'gpt-5': 'gpt-5',
+  'o4-mini': 'o4-mini',
+  'o3': 'o3',
 };
 
 /**
  * Prefixes that are stripped before model alias lookup.
  * Allows clients like OpenClaw to send e.g. "claude-code-cli/opus".
  */
-const STRIP_PREFIXES = ['claude-code-cli/', 'openai/'];
+const STRIP_PREFIXES = ['claude-code-cli/', 'openai/', 'codex/'];
 
 // Map CLI model names back to full Anthropic model IDs for responses
 const CLI_TO_API_MODEL: Record<string, string> = {
-  'opus': 'claude-opus-4-6',
-  'sonnet': 'claude-sonnet-4-6',
-  'haiku': 'claude-haiku-4-5',
+  'gpt-5-codex': 'gpt-5-codex',
+  'gpt-5': 'gpt-5',
+  'o4-mini': 'o4-mini',
+  'o3': 'o3',
 };
 
 // Effort level constraints per model
 const EFFORT_BY_MODEL: Record<string, string[]> = {
-  opus: ['low', 'medium', 'high', 'max'],
-  sonnet: ['low', 'medium', 'high'],
-  haiku: [], // No effort support
+  'gpt-5-codex': ['low', 'medium', 'high'],
+  'gpt-5': ['low', 'medium', 'high'],
+  'o4-mini': ['low', 'medium', 'high'],
+  'o3': ['low', 'medium', 'high'],
 };
 
 /**
@@ -59,6 +48,8 @@ export function toCliModel(model: string, defaultCliModel?: string): string {
   const stripped = stripModelPrefix(model);
   const normalized = MODEL_ALIASES[stripped];
   if (normalized) return normalized;
+
+  if (stripped) return stripped;
 
   // Unknown model — fall back to default if provided
   if (defaultCliModel) {
@@ -100,8 +91,9 @@ export function validateEffort(model: string, effort: string | undefined, defaul
 
 export function getAllModels(): Array<{ id: string; owned_by: string }> {
   return [
-    { id: 'claude-opus-4-6', owned_by: 'anthropic' },
-    { id: 'claude-sonnet-4-6', owned_by: 'anthropic' },
-    { id: 'claude-haiku-4-5', owned_by: 'anthropic' },
+    { id: 'gpt-5-codex', owned_by: 'openai' },
+    { id: 'gpt-5', owned_by: 'openai' },
+    { id: 'o4-mini', owned_by: 'openai' },
+    { id: 'o3', owned_by: 'openai' },
   ];
 }

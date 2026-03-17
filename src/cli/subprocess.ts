@@ -9,7 +9,12 @@ export interface SubprocessResult {
   process: ChildProcess;
 }
 
-export function spawnCli(args: string[], prompt: string, timeoutMs: number): SubprocessResult {
+export function spawnCli(
+  args: string[],
+  prompt: string,
+  timeoutMs: number,
+  outputFile?: string,
+): SubprocessResult {
   const command = args[0];
   const spawnArgs = args.slice(1);
 
@@ -32,8 +37,10 @@ export function spawnCli(args: string[], prompt: string, timeoutMs: number): Sub
   });
 
   // Write prompt via stdin and close
-  proc.stdin.write(prompt);
-  proc.stdin.end();
+  if (proc.stdin) {
+    proc.stdin.write(prompt);
+    proc.stdin.end();
+  }
 
   // Capture stderr for logging
   const MAX_STDERR = 4096;
@@ -78,7 +85,7 @@ export function spawnCli(args: string[], prompt: string, timeoutMs: number): Sub
       if (!proc.stdout) {
         throw new Error('CLI process stdout is null');
       }
-      yield* parseCliStream(proc.stdout);
+      yield* parseCliStream(proc.stdout, outputFile);
     } finally {
       clearTimeout(timeoutId);
       if (!proc.killed) {

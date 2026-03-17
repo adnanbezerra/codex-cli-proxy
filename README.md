@@ -1,237 +1,186 @@
-# Claude Code Proxy
+# Codex CLI Proxy
 
-Use your **Claude Max subscription** as an API. This proxy wraps the Claude CLI as a subprocess and exposes standard API endpoints that any SDK or tool can talk to.
+Use the local **OpenAI Codex CLI** as an HTTP API. This proxy wraps `codex exec` and exposes:
 
-**Two APIs, one proxy:**
-- **Anthropic Messages API** — `POST /v1/messages`
-- **OpenAI Chat Completions API** — `POST /v1/chat/completions`
+- `POST /v1/messages` in Anthropic Messages format
+- `POST /v1/chat/completions` in OpenAI Chat Completions format
+- `GET /v1/models`
+- `GET /health`
 
-Works with the Anthropic SDK, OpenAI SDK, Python clients, Cursor, Continue, aider, LiteLLM, OpenClaw, and anything else that accepts a custom base URL.
-
-## Why?
-
-Claude Max gives you generous usage through the CLI, but no API access. This proxy bridges that gap — run it locally and point any SDK at it.
+The server stays stateless: every HTTP request spawns a fresh `codex exec --json` subprocess, sends the flattened prompt through stdin, adapts Codex JSONL events into the proxy's internal stream format, and translates the result back to JSON or SSE.
 
 ## Prerequisites
 
-- **Node.js** 20+
-- **Claude CLI** installed and authenticated (`claude --version` should work)
-- **Claude Max subscription** (the CLI must be logged in)
+- Node.js 20+
+- Codex CLI installed and authenticated: `codex --version`
 
 ## Install
 
 ```bash
-git clone https://github.com/AntonioAEMartins/claude-code-proxy.git
+git clone <your-fork-or-repo>
 cd claude-code-proxy
 npm install
 npm run build
-npm link     # makes `claude-proxy` available globally
+npm link
 ```
+
+`npm link` exposes `codex-proxy` and keeps `claude-proxy` as a compatibility alias.
 
 ## Usage
 
 ```bash
-# Start the proxy (no auth, for local use)
-REQUIRE_AUTH=false claude-proxy
-
-# With auth
-PROXY_API_KEYS=my-secret-key claude-proxy
-
-# Custom port
-PORT=8080 REQUIRE_AUTH=false claude-proxy
+REQUIRE_AUTH=false codex-proxy
+PROXY_API_KEYS=my-secret-key codex-proxy
+PORT=8080 REQUIRE_AUTH=false codex-proxy
 ```
 
-The proxy starts on `http://127.0.0.1:4523` by default.
+Default address: `http://127.0.0.1:4523`
 
-## Connect Your SDK
+## Authentication
 
-### TypeScript / JavaScript
+The proxy has two separate authentication layers:
 
-```typescript
-// Anthropic SDK
-import Anthropic from "@anthropic-ai/sdk";
+1. Codex CLI authentication
+2. Proxy HTTP authentication
 
-const client = new Anthropic({
-  apiKey: "any-string",
-  baseURL: "http://localhost:4523",
-});
+They are independent.
 
-const message = await client.messages.create({
-  model: "claude-sonnet-4",
-  max_tokens: 1024,
-  messages: [{ role: "user", content: "Hello!" }],
-});
+### 1. Codex CLI authentication
+
+This is the login the proxy uses internally when it runs `codex exec`.
+
+Example:
+
+```bash
+codex login
+codex --version
 ```
 
-```typescript
-// OpenAI SDK
-import OpenAI from "openai";
+The proxy does not read a secret from the CLI and does not expose your Codex login as an API key. It simply launches the local Codex CLI process, which uses whatever account/session is already configured on your machine.
 
-const client = new OpenAI({
-  apiKey: "any-string",
-  baseURL: "http://localhost:4523/v1",
-});
+### 2. Proxy HTTP authentication
 
-const completion = await client.chat.completions.create({
-  model: "claude-sonnet-4",
-  messages: [{ role: "user", content: "Hello!" }],
-});
+This is the token that clients must send when calling your local proxy over HTTP.
+
+Example:
+
+```bash
+PROXY_API_KEYS=my-secret-key codex-proxy
 ```
 
-### Python
+`my-secret-key` is just an example string. You invent it yourself. It is not fetched from Codex CLI, not generated automatically, and not related to your OpenAI account token.
 
-```python
-# Anthropic
-import anthropic
+If you want multiple valid tokens, separate them with commas:
 
-client = anthropic.Anthropic(api_key="any-string", base_url="http://localhost:4523")
-message = client.messages.create(
-    model="claude-sonnet-4",
-    max_tokens=1024,
-    messages=[{"role": "user", "content": "Hello!"}],
-)
+```bash
+PROXY_API_KEYS=local-dev-key,team-key codex-proxy
 ```
 
-```python
-# OpenAI
-import openai
+If you want to disable proxy auth entirely for local-only usage:
 
-client = openai.OpenAI(api_key="any-string", base_url="http://localhost:4523/v1")
-completion = client.chat.completions.create(
-    model="claude-sonnet-4",
-    messages=[{"role": "user", "content": "Hello!"}],
-)
+```bash
+REQUIRE_AUTH=false codex-proxy
 ```
 
-### Other Tools
+### How clients send the proxy token
 
-Any tool with a "custom base URL" or "OpenAI-compatible" setting works:
+The server accepts either:
 
-| Tool | Base URL Setting |
-|------|-----------------|
-| **Cursor** | `http://localhost:4523/v1` |
-| **Continue** | `http://localhost:4523/v1` |
-| **aider** | `--openai-api-base http://localhost:4523/v1` |
-| **LiteLLM** | `api_base="http://localhost:4523/v1"` |
-| **OpenClaw** | `OPENAI_BASE_URL=http://host.docker.internal:4523/v1` |
+- `Authorization: Bearer <token>`
+- `x-api-key: <token>`
 
-Use `claude-sonnet-4-6`, `claude-opus-4-6`, or `claude-haiku-4-5` as the model name (shorter aliases like `sonnet`, `opus`, `haiku` also work). Model names with a `claude-code-cli/` or `openai/` prefix are also accepted (the prefix is stripped automatically). Unknown models fall back to the `DEFAULT_MODEL`.
+Examples:
 
-## Streaming
-
-Both APIs support streaming out of the box:
-
-```typescript
-// Anthropic streaming
-const stream = client.messages.stream({
-  model: "claude-sonnet-4",
-  max_tokens: 1024,
-  messages: [{ role: "user", content: "Write a haiku" }],
-});
-
-for await (const event of stream) {
-  // process events
-}
+```bash
+curl http://127.0.0.1:4523/health \
+  -H 'Authorization: Bearer my-secret-key'
 ```
 
-```typescript
-// OpenAI streaming
-const stream = await client.chat.completions.create({
-  model: "claude-sonnet-4",
-  messages: [{ role: "user", content: "Write a haiku" }],
-  stream: true,
-});
-
-for await (const chunk of stream) {
-  process.stdout.write(chunk.choices[0]?.delta?.content || "");
-}
+```bash
+curl http://127.0.0.1:4523/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer my-secret-key' \
+  -d '{
+    "model": "gpt-5-codex",
+    "messages": [{"role": "user", "content": "hello"}]
+  }'
 ```
 
-## Available Models
+```bash
+curl http://127.0.0.1:4523/v1/messages \
+  -H 'Content-Type: application/json' \
+  -H 'x-api-key: my-secret-key' \
+  -d '{
+    "model": "gpt-5-codex",
+    "max_tokens": 1024,
+    "messages": [{"role": "user", "content": "hello"}]
+  }'
+```
 
-| Model Name | Aliases |
-|-----------|---------|
-| `claude-opus-4-6` | `claude-opus-4`, `opus` |
-| `claude-sonnet-4-6` | `claude-sonnet-4`, `sonnet` |
-| `claude-haiku-4-5` | `claude-haiku-4`, `haiku` |
+### Recommended setup
 
-## Features
+For a machine used only by you:
 
-- **Streaming & non-streaming** for both Anthropic and OpenAI formats
-- **System prompts**
-- **Multi-turn conversations**
-- **Tool use / function calling** via MCP bridge
-- **Structured output** (JSON schema)
-- **Extended thinking** (set `ENABLE_THINKING=true`)
-- **Effort levels** — `low`, `medium`, `high`, `max` (model-dependent)
-- **Rate limit propagation** from CLI quota
-- **Auto-cleanup** — subprocess killed on client disconnect or timeout
-- **OpenClaw integration** — automatic tool name mapping, system prompt filtering, and `input_text` block support
+```bash
+REQUIRE_AUTH=false codex-proxy
+```
+
+For tools, containers, browser extensions, or other apps connecting to the proxy:
+
+```bash
+PROXY_API_KEYS=choose-a-long-random-string codex-proxy
+```
+
+In short: log into Codex CLI once with `codex login`, then separately choose your own proxy token with `PROXY_API_KEYS`.
+
+## Model Names
+
+Accepted aliases:
+
+- `codex`, `gpt-5-codex` -> `gpt-5-codex`
+- `gpt-5`
+- `o4-mini`
+- `o3`
+
+Prefixes like `openai/` and `codex/` are stripped automatically. Unknown model names are passed through to Codex as-is.
 
 ## Configuration
 
-All settings are environment variables:
-
 | Variable | Default | Description |
-|----------|---------|-------------|
+|---|---|---|
 | `PORT` | `4523` | Server port |
 | `HOST` | `127.0.0.1` | Bind address |
-| `PROXY_API_KEYS` | — | Comma-separated API keys for auth |
-| `REQUIRE_AUTH` | `true` | Set `false` for local use |
-| `CLAUDE_PATH` | `claude` | Path to Claude CLI |
-| `DEFAULT_MODEL` | `sonnet` | Model when not specified |
-| `DEFAULT_EFFORT` | `high` | Default effort level |
-| `REQUEST_TIMEOUT_MS` | `300000` | Request timeout (5 min) |
-| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-| `ENABLE_THINKING` | `false` | Include thinking blocks |
+| `PROXY_API_KEYS` | *(none)* | Comma-separated bearer tokens |
+| `REQUIRE_AUTH` | `true` | Set `false` to disable auth |
+| `CODEX_PATH` | `codex` | Path to the Codex CLI |
+| `CLAUDE_PATH` | *(fallback only)* | Backward-compatible alias for `CODEX_PATH` |
+| `DEFAULT_MODEL` | `gpt-5-codex` | Fallback model |
+| `DEFAULT_EFFORT` | `medium` | Reserved for future support |
+| `REQUEST_TIMEOUT_MS` | `300000` | Per-request timeout |
+| `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
+| `ENABLE_THINKING` | `false` | Preserved for API compatibility; Codex thinking is not surfaced yet |
 
-## API Endpoints
+## Current Behavior
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/v1/messages` | Anthropic Messages API |
-| `POST` | `/v1/chat/completions` | OpenAI Chat Completions |
-| `GET` | `/v1/models` | List available models |
-| `GET` | `/health` | Health check |
+- Streaming and non-streaming responses work for both API formats.
+- System prompts are injected into the stdin prompt envelope because `codex exec` has no dedicated system flag.
+- Multi-turn chat is flattened into a single prompt before execution.
+- OpenClaw prompt filtering and OpenAI-format normalization are still active.
+- The proxy runs Codex with `--full-auto --ephemeral --skip-git-repo-check`.
 
-## How It Works
+## Current Limitations
 
-Each API request spawns a fresh `claude --print` subprocess. The proxy translates between API formats and CLI I/O:
+- Client-defined tools / function calling are accepted for compatibility but ignored.
+- JSON-schema structured output is not wired through yet.
+- `temperature`, `top_p`, `top_k`, `stop`, `stop_sequences`, penalties, and `n > 1` are still unsupported.
+- Token usage is best-effort and depends on which Codex JSONL events are emitted.
+- The proxy currently synthesizes Anthropic-style stream events from Codex output; it is not a byte-for-byte CLI passthrough.
 
+## Development
+
+```bash
+npm run build
+npm start
 ```
-Your App  →  HTTP Request  →  Proxy  →  claude --print  →  Claude Max
-                                ↕
-                          Translates formats
-                          (Anthropic ↔ CLI ↔ OpenAI)
-```
 
-- Prompts are sent via stdin
-- Responses are parsed from stdout (NDJSON stream)
-- Each request is stateless — no sessions, no state between calls
-- The proxy uses `--dangerously-skip-permissions` for non-interactive operation
-
-## Limitations
-
-- **No image/vision support yet** — image content blocks are not passed through
-- **Sampling parameters ignored** — `temperature`, `top_p`, `top_k` are accepted but have no effect (CLI doesn't expose them)
-- **`max_tokens` is advisory** — there's no direct CLI flag for token limits
-- **Rate limits depend on your subscription** — the proxy passes through whatever quota the CLI reports
-- **One completion per request** — `n > 1` is not supported
-
-## Security
-
-- Uses `spawn()` (not `exec()`) to prevent shell injection
-- API key comparison uses `crypto.timingSafeEqual`
-- Request bodies capped at 10MB
-- Subprocess environment is filtered — your secrets are not leaked to the CLI
-- Subprocesses are killed on client disconnect and request timeout
-
-## Contributing
-
-Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
-
-The short version: open an issue to discuss, then fork, branch, and submit a PR. See the contributing guide for branch naming, commit conventions, code guidelines, and testing steps.
-
-## License
-
-[MIT](LICENSE) — use it however you want, just keep the copyright notice.
+This project is strict TypeScript, ESM, and uses `spawn()` rather than `exec()` for subprocess safety.

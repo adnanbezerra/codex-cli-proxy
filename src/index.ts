@@ -4,8 +4,8 @@ import { loadConfig } from './config.js';
 import { setLogLevel, logger } from './util/logger.js';
 import { spawnSync } from 'node:child_process';
 
-function verifyClaude(claudePath: string): void {
-  const result = spawnSync(claudePath, ['--version'], {
+function verifyCodex(codexPath: string): void {
+  const result = spawnSync(codexPath, ['--version'], {
     timeout: 10000,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -13,27 +13,27 @@ function verifyClaude(claudePath: string): void {
   if (result.error) {
     const code = (result.error as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') {
-      logger.error(`Claude CLI not found at "${claudePath}". Install it or set CLAUDE_PATH.`);
+      logger.error(`Codex CLI not found at "${codexPath}". Install it or set CODEX_PATH.`);
     } else {
-      logger.error(`Failed to verify Claude CLI: ${result.error.message}`);
+      logger.error(`Failed to verify Codex CLI: ${result.error.message}`);
     }
     process.exit(1);
   }
 
   if (result.status !== 0) {
-    logger.error(`Claude CLI exited with code ${result.status}`);
+    logger.error(`Codex CLI exited with code ${result.status}`);
     process.exit(1);
   }
 
   const version = result.stdout?.toString().trim();
-  logger.info('Claude CLI verified', { version, path: claudePath });
+  logger.info('Codex CLI verified', { version, path: codexPath });
 }
 
 async function main(): Promise<void> {
   const config = loadConfig();
   setLogLevel(config.logLevel);
 
-  logger.info('Starting Claude Code Proxy', {
+  logger.info('Starting Codex API Proxy', {
     port: config.port,
     host: config.host,
     defaultModel: config.defaultModel,
@@ -41,7 +41,7 @@ async function main(): Promise<void> {
     enableThinking: config.enableThinking,
   });
 
-  verifyClaude(config.claudePath);
+  verifyCodex(config.codexPath);
 
   const server = createServer(config);
 
